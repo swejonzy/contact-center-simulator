@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Contact Center Capacity Simulator (Erlang C)</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-titles">
+        <div class="badge-pill">Version 1.0 • Erlang C Engine</div>
+        <h1>Contact Center Capacity Simulator</h1>
+        <p class="subtitle">Model inbound call workload, staffing capacity, occupancy, and Service Level attainment in real time.</p>
+      </div>
+      <div class="preset-bar" aria-label="Synthetic Scenario Presets">
+        <span class="preset-label">Load Synthetic Scenario:</span>
+        <button type="button" class="btn-preset" data-preset="small">Small Desk (15 Agents)</button>
+        <button type="button" class="btn-preset active" data-preset="standard">Mid-Size Queue (57 Agents)</button>
+        <button type="button" class="btn-preset" data-preset="enterprise">Enterprise Center (185 Agents)</button>
+        <button type="button" class="btn-preset" data-preset="overload">Spike / Understaffed</button>
+      </div>
+    </header>
+
+    <!-- Staffing Verdict Banner -->
+    <section id="verdictBanner" class="verdict-banner status-green" aria-live="polite">
+      <div class="verdict-indicator">
+        <span id="verdictDot" class="status-dot"></span>
+        <span id="verdictStatusText" class="verdict-status-tag">SLA TARGET MET</span>
+      </div>
+      <div class="verdict-content">
+        <h2 id="verdictHeadline">Service Level meets the target</h2>
+        <p id="verdictDetail">Calculating staffing metrics...</p>
+      </div>
+      <div class="verdict-action">
+        <div class="recommended-box">
+          <span class="rec-label">Min Agents for SLA</span>
+          <strong id="recAgentsValue" class="rec-value">--</strong>
+          <button type="button" id="applyRecBtn" class="btn-apply-rec" title="Set available agents to this recommended number">
+            Apply Recommended
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Iteration 5: AI Voicebot Front-Door Deflection Stage -->
+    <section class="card voicebot-card" aria-labelledby="voicebotHeading">
+      <div class="voicebot-top">
+        <div class="voicebot-title-block">
+          <div class="hero-badge-row">
+            <span class="bot-badge">AI Voicebot Front-Door (Self-Service IVR)</span>
+            <span id="botAgentSavingsBadge" class="bot-savings-pill">0 Human Agents Saved by AI</span>
+          </div>
+          <h2 id="voicebotHeading">AI Voicebot Call Resolution &amp; Deflection Flow</h2>
+          <p>Incoming calls first greet the AI Voicebot. Configure the <strong>AI Resolution / Containment Rate (%)</strong> to see how many calls are resolved autonomously before reaching a human agent.</p>
+        </div>
+
+        <div class="voicebot-slider-box">
+          <div class="control-label-row">
+            <label for="botContainmentInput">AI Voicebot Resolution Rate (%)</label>
+            <span class="unit-tag" id="botRateTag">20% Resolved by AI</span>
+          </div>
+          <div class="control-inputs">
+            <input type="range" id="botContainmentSlider" min="0" max="90" step="1" value="0" aria-label="AI Voicebot resolution percentage" />
+            <input type="number" id="botContainmentInput" min="0" max="95" step="1" value="0" />
+          </div>
+          <div class="bot-quick-presets">
+            <span>Quick AI Presets:</span>
+            <button type="button" class="btn-bot-rate active" data-bot-rate="0">0% (No Bot)</button>
+            <button type="button" class="btn-bot-rate" data-bot-rate="15">15% (FAQ Bot)</button>
+            <button type="button" class="btn-bot-rate" data-bot-rate="30">30% (Transactional AI)</button>
+            <button type="button" class="btn-bot-rate" data-bot-rate="50">50% (Agentic Voice AI)</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Visual 3-Stage Call Flow Pipeline -->
+      <div class="voicebot-pipeline" aria-label="Call routing flow from Gross Inflow through AI Voicebot to Human Agents">
+        <div class="pipeline-node node-inflow">
+          <span class="node-step">1. Gross Incoming Volume</span>
+          <strong id="pipeGrossCalls" class="node-value">600 calls/hr</strong>
+          <span id="pipeGrossErlangs" class="node-sub">50.00 Erlangs total demand</span>
+        </div>
+
+        <div class="pipeline-arrow" aria-hidden="true">→</div>
+
+        <div class="pipeline-node node-bot">
+          <span class="node-step">2. Resolved by AI Voicebot (<span id="pipeBotPct">0%</span>)</span>
+          <strong id="pipeDeflectedCalls" class="node-value">0 calls/hr</strong>
+          <span id="pipeErlangsSaved" class="node-sub">0.00 Erlangs offloaded from humans</span>
+        </div>
+
+        <div class="pipeline-arrow" aria-hidden="true">→</div>
+
+        <div class="pipeline-node node-humans">
+          <span class="node-step">3. Net Calls Reaching Human Agents</span>
+          <strong id="pipeNetCalls" class="node-value">600 calls/hr</strong>
+          <span id="pipeNetErlangs" class="node-sub">50.00 Erlangs → Min <strong id="pipeNetReqAgents">57</strong> human agents for SLA</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Iteration 2: Interactive Agent Slider Hero Bar (1 to 200 Agents) -->
+    <section class="agent-hero-card card" aria-labelledby="heroSliderTitle">
+      <div class="agent-hero-top">
+        <div class="agent-hero-title-group">
+          <div class="hero-badge-row">
+            <span class="hero-step-badge">Interactive Staffing Explorer</span>
+            <span id="heroDeltaTag" class="hero-delta-tag">At SLA Requirement</span>
+          </div>
+          <h2 id="heroSliderTitle">Slide to Adjust Available Agents (1 – 200)</h2>
+          <p>Drag the slider or use the step buttons to immediately see how Service Level, Waiting Time (ASA), and Occupancy respond.</p>
+        </div>
+        <div class="agent-hero-counter">
+          <button type="button" id="agentStepDown" class="btn-step" aria-label="Decrease agents by 1" title="-1 Agent">−</button>
+          <div class="agent-count-display">
+            <span id="heroAgentCount" class="hero-agent-number">57</span>
+            <span class="hero-agent-unit">Agents</span>
+          </div>
+          <button type="button" id="agentStepUp" class="btn-step" aria-label="Increase agents by 1" title="+1 Agent">+</button>
+        </div>
+      </div>
+
+      <div class="hero-slider-wrapper">
+        <div class="hero-slider-track-container">
+          <input
+            type="range"
+            id="heroAgentsSlider"
+            class="hero-range-slider"
+            min="1"
+            max="200"
+            step="1"
+            value="57"
+            aria-label="Number of agents between 1 and 200"
+          />
+          <div class="hero-markers" id="heroSliderMarkers" aria-hidden="true">
+            <!-- Dynamically shows Min Stable (Workload) & SLA Target markers -->
+            <div id="markerWorkload" class="slider-marker marker-workload" style="left: 25%;">
+              <span class="marker-line"></span>
+              <span class="marker-label" id="markerWorkloadText">50 E (Min Stable)</span>
+            </div>
+            <div id="markerSla" class="slider-marker marker-sla" style="left: 28%;">
+              <span class="marker-line"></span>
+              <span class="marker-label" id="markerSlaText">57 (SLA Target)</span>
+            </div>
+          </div>
+        </div>
+        <div class="hero-scale-labels" aria-hidden="true">
+          <span>1 Agent</span>
+          <span>50</span>
+          <span>100</span>
+          <span>150</span>
+          <span>200 Agents</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Grid: Left Inputs, Right Results -->
+    <main class="main-grid">
+      <!-- Input Panel -->
+      <section class="card input-panel" aria-labelledby="inputsHeading">
+        <div class="card-header">
+          <h2 id="inputsHeading">Queue &amp; Staffing Parameters</h2>
+          <p>Adjust sliders or enter exact figures below.</p>
+        </div>
+
+        <form id="simulatorForm" onsubmit="return false;">
+          <!-- Inflow -->
+          <div class="control-group">
+            <div class="control-label-row">
+              <label for="inflowInput">Inflow (Calls per Hour)</label>
+              <span class="unit-tag">calls / hr</span>
+            </div>
+            <div class="control-inputs">
+              <input type="range" id="inflowSlider" min="0" max="3600" step="10" value="600" />
+              <input type="number" id="inflowInput" min="0" max="20000" step="1" value="600" />
+            </div>
+            <span class="helper-text">Forecasted arrival volume for a 1-hour interval.</span>
+          </div>
+
+          <!-- AHT -->
+          <div class="control-group">
+            <div class="control-label-row">
+              <label for="ahtInput">Average Handling Time (AHT)</label>
+              <span class="unit-tag" id="ahtMinutesHint">300s (5.0 min)</span>
+            </div>
+            <div class="control-inputs">
+              <input type="range" id="ahtSlider" min="15" max="1800" step="5" value="300" />
+              <input type="number" id="ahtInput" min="1" max="7200" step="1" value="300" />
+            </div>
+            <span class="helper-text">Talk time + hold time + after-call work (wrap-up) in seconds.</span>
+          </div>
+
+          <!-- Available Agents -->
+          <div class="control-group highlight-control">
+            <div class="control-label-row">
+              <label for="agentsInput">Scheduled / Available Agents (N)</label>
+              <span class="unit-tag">1 – 200 agents</span>
+            </div>
+            <div class="control-inputs">
+              <input type="range" id="agentsSlider" min="1" max="200" step="1" value="57" />
+              <input type="number" id="agentsInput" min="1" max="200" step="1" value="57" />
+            </div>
+            <span class="helper-text">Net productive agents logged into the queue (1 to 200).</span>
+          </div>
+
+          <hr class="divider" />
+
+          <!-- Target Service Level -->
+          <div class="control-group">
+            <div class="control-label-row">
+              <label for="targetSlInput">Target Service Level (%)</label>
+              <span class="unit-tag">% answered</span>
+            </div>
+            <div class="control-inputs">
+              <input type="range" id="targetSlSlider" min="50" max="99" step="1" value="80" />
+              <input type="number" id="targetSlInput" min="1" max="99.9" step="0.5" value="80" />
+            </div>
+          </div>
+
+          <!-- Target Answer Time -->
+          <div class="control-group">
+            <div class="control-label-row">
+              <label for="targetTimeInput">Target Answer Time Threshold</label>
+              <span class="unit-tag">seconds</span>
+            </div>
+            <div class="control-inputs">
+              <input type="range" id="targetTimeSlider" min="5" max="120" step="5" value="20" />
+              <input type="number" id="targetTimeInput" min="1" max="600" step="1" value="20" />
+            </div>
+            <span class="helper-text">Classic industry standard is 80% of calls answered within 20 seconds.</span>
+          </div>
+        </form>
+      </section>
+
+      <!-- Output Panel -->
+      <section class="results-column" aria-label="Simulation Outputs">
+        <!-- 4 Core KPI Cards -->
+        <div class="kpi-grid">
+          <!-- Workload Card -->
+          <article class="card kpi-card">
+            <div class="kpi-top">
+              <span class="kpi-title">Workload (Traffic Intensity)</span>
+              <span class="kpi-symbol" title="Erlangs = (Calls/hr × AHT) / 3600">A</span>
+            </div>
+            <div class="kpi-main">
+              <span id="kpiWorkload" class="kpi-value">50.00</span>
+              <span class="kpi-unit">Erlangs</span>
+            </div>
+            <div class="kpi-footer" id="kpiWorkloadSub">
+              Minimum 51 agents required for queue stability
+            </div>
+          </article>
+
+          <!-- Estimated Service Level Card -->
+          <article class="card kpi-card" id="slCard">
+            <div class="kpi-top">
+              <span class="kpi-title">Estimated Service Level</span>
+              <span id="slTargetBadge" class="kpi-badge">Target: 80% in 20s</span>
+            </div>
+            <div class="kpi-main">
+              <span id="kpiServiceLevel" class="kpi-value">81.5%</span>
+            </div>
+            <div class="meter-track" aria-hidden="true">
+              <div id="slMeterFill" class="meter-fill" style="width: 81.5%"></div>
+            </div>
+            <div class="kpi-footer" id="kpiServiceLevelSub">
+              Probability of waiting: <strong id="kpiProbWait">32.1%</strong>
+            </div>
+          </article>
+
+          <!-- Estimated Occupancy Card -->
+          <article class="card kpi-card" id="occCard">
+            <div class="kpi-top">
+              <span class="kpi-title">Estimated Occupancy</span>
+              <span class="kpi-symbol" title="Agent Utilization = Workload / Agents (capped at 100%)">ρ</span>
+            </div>
+            <div class="kpi-main">
+              <span id="kpiOccupancy" class="kpi-value">90.9%</span>
+            </div>
+            <div class="meter-track" aria-hidden="true">
+              <div id="occMeterFill" class="meter-fill" style="width: 90.9%"></div>
+            </div>
+            <div class="kpi-footer" id="kpiOccupancySub">
+              Productive time while logged in (capped at 100%)
+            </div>
+          </article>
+
+          <!-- Average Speed of Answer (ASA) Card -->
+          <article class="card kpi-card" id="asaCard">
+            <div class="kpi-top">
+              <span class="kpi-title">Average Speed of Answer (ASA)</span>
+              <span class="kpi-symbol" title="Average wait time across all arriving calls">ASA</span>
+            </div>
+            <div class="kpi-main">
+              <span id="kpiAsa" class="kpi-value">19.3</span>
+              <span id="kpiAsaUnit" class="kpi-unit">sec</span>
+            </div>
+            <div class="kpi-footer" id="kpiAsaSub">
+              Average wait across all callers (including immediate answers)
+            </div>
+          </article>
+        </div>
+
+        <!-- Service Level Curve Graph (Agents on X-axis vs. Expected Service Level on Y-axis) -->
+        <section class="card chart-card" aria-labelledby="chartHeading">
+          <div class="chart-header">
+            <div>
+              <h3 id="chartHeading">Service Level Curve (Agents vs. Expected Service Level %)</h3>
+              <p>Illustrates the classic Erlang C "S-curve": rapid gains near the stability threshold, followed by diminishing returns.</p>
+            </div>
+            <div class="chart-legend" aria-hidden="true">
+              <span class="legend-item"><span class="legend-swatch swatch-curve"></span>Expected SL %</span>
+              <span class="legend-item"><span class="legend-swatch swatch-target"></span>Target SLA</span>
+              <span class="legend-item"><span class="legend-swatch swatch-current"></span>Current Agents</span>
+            </div>
+          </div>
+          <div class="chart-container">
+            <svg id="slChartSvg" class="sl-chart-svg" viewBox="0 0 720 290" role="img" aria-label="Graph of Agents on X-axis and Expected Service Level percentage on Y-axis"></svg>
+          </div>
+        </section>
+
+        <!-- Staffing Sensitivity What-If Table -->
+        <section class="card sensitivity-card" aria-labelledby="sensitivityHeading">
+          <div class="card-header-compact">
+            <div>
+              <h3 id="sensitivityHeading">Staffing Sensitivity ("What-If" Neighborhood)</h3>
+              <p>See how adding or removing a few agents impacts Service Level, ASA, and Occupancy (Economy of Scale in action).</p>
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table class="sensitivity-table">
+              <thead>
+                <tr>
+                  <th>Agents (N)</th>
+                  <th>vs. Current</th>
+                  <th>Occupancy</th>
+                  <th>Wait Prob (P<sub>W</sub>)</th>
+                  <th>ASA</th>
+                  <th>Service Level</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="sensitivityTableBody">
+                <!-- Populated dynamically by app.js -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <!-- Iteration 3 & 4: Multi-Queue & Skill-Based Routing (SBR) Simulator -->
+    <section class="card multi-queue-section" aria-labelledby="multiQueueHeading">
+      <div class="mq-header">
+        <div class="mq-title-block">
+          <span class="badge-pill">Multi-Queue &amp; Skill-Based Routing (SBR)</span>
+          <h2 id="multiQueueHeading">Skill-Based Routing: Multi-Skilled Agents &amp; Queue Requirements</h2>
+          <p>Queues require a specific skill, and Agent Groups can hold <strong>one or multiple skills</strong>. Multi-skilled agents automatically share capacity across queues they are qualified for—bridging the gap between strict silos and a 100% universal pool.</p>
+        </div>
+        <div class="mq-actions">
+          <button type="button" id="resetQueuesBtn" class="btn-preset">Reset Default SBR Setup</button>
+          <button type="button" id="syncBlendedToMainBtn" class="btn-primary-action" title="Load combined multi-queue volume and weighted AHT into the top simulator">
+            ↑ Load Combined Workload into Top Simulator &amp; Graph
+          </button>
+        </div>
+      </div>
+
+      <!-- 3-Way Comparison Banner: Siloed vs. Skill-Based Routing vs. 100% Universal Pool -->
+      <div class="sbr-comparison-grid">
+        <div class="synergy-box">
+          <div class="synergy-box-header">
+            <span class="synergy-tag">1. Strict Silos (1 Skill Only)</span>
+            <span class="pill-status pill-yellow">No Sharing</span>
+          </div>
+          <div class="synergy-metrics-3">
+            <div>
+              <span class="syn-label">Sum of Queue Mins</span>
+              <strong id="sbrSiloMinAgents">59 agents</strong>
+            </div>
+            <div>
+              <span class="syn-label">Total Workload</span>
+              <strong id="mqTotalErlangs">46.50 E</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="synergy-box synergy-sbr-active">
+          <div class="synergy-box-header">
+            <span class="synergy-tag">2. Active Skill-Based Routing (Your Matrix)</span>
+            <span id="sbrCenterBadge" class="pill-status pill-green">Meets SLA</span>
+          </div>
+          <div class="synergy-metrics-4">
+            <div>
+              <span class="syn-label">Scheduled Agents</span>
+              <strong id="sbrTotalAgents">56</strong>
+            </div>
+            <div>
+              <span class="syn-label">Weighted SL %</span>
+              <strong id="sbrCenterSl">84.8%</strong>
+            </div>
+            <div>
+              <span class="syn-label">Weighted ASA</span>
+              <strong id="sbrCenterAsa">13.4s</strong>
+            </div>
+            <div>
+              <span class="syn-label">Center Occupancy</span>
+              <strong id="sbrCenterOcc">83.0%</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="synergy-box synergy-blended">
+          <div class="synergy-box-header">
+            <span class="synergy-tag">3. All-Skills Universal Benchmark</span>
+            <span id="mqBlendedBadge" class="pill-status pill-green">Max Synergy</span>
+          </div>
+          <div class="synergy-metrics-3">
+            <div>
+              <span class="syn-label">Min Needed (All-Skills)</span>
+              <strong id="mqBlendedReq">54 agents</strong>
+            </div>
+            <div>
+              <span class="syn-label">Universal Pool SL %</span>
+              <strong id="mqBlendedSl">91.2%</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step A: Agent Groups & Skill Matrix -->
+      <div class="sbr-subpanel">
+        <div class="sbr-subpanel-header">
+          <div>
+            <h3>Step 1: Agent Groups &amp; Assigned Skills</h3>
+            <p>Click skill pills to toggle which skills each agent team possesses. Multi-skilled teams dynamically balance load across matching queues.</p>
+          </div>
+          <button type="button" id="addAgentGroupBtn" class="btn-secondary">+ Add Agent Group</button>
+        </div>
+
+        <div class="table-wrapper">
+          <table class="mq-table">
+            <thead>
+              <tr>
+                <th>Agent Team / Group Name</th>
+                <th>Headcount (Agents)</th>
+                <th style="text-align: left;">Assigned Skills (Click to Toggle)</th>
+                <th style="text-align: left;">Effective Routing Split Across Queues</th>
+                <th>Group Occupancy</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="agentGroupsTableBody">
+              <!-- Populated dynamically by app.js -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Step B: Queues & Required Skill Table -->
+      <div class="sbr-subpanel" style="margin-top: 22px;">
+        <div class="sbr-subpanel-header">
+          <div>
+            <h3>Step 2: Queues, Required Skill &amp; Resulting SLA Performance</h3>
+            <p>Each queue requires a specific skill. "Effective Agents" shows the capacity routed to that queue from qualified specialist and multi-skilled teams.</p>
+          </div>
+          <button type="button" id="addQueueBtn" class="btn-secondary">+ Add Queue</button>
+        </div>
+
+        <div class="table-wrapper">
+          <table class="mq-table">
+            <thead>
+              <tr>
+                <th>Queue Name</th>
+                <th style="text-align: left;">Required Skill</th>
+                <th>Gross Inflow</th>
+                <th>Net Human Calls</th>
+                <th>AHT (sec)</th>
+                <th>Net Workload</th>
+                <th>Effective Agents (Qualified Pool)</th>
+                <th>Min for SLA</th>
+                <th>Queue Occ %</th>
+                <th>Expected ASA</th>
+                <th>Expected SL %</th>
+                <th>Verdict</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="multiQueueTableBody">
+              <!-- Populated dynamically by app.js -->
+            </tbody>
+            <tfoot>
+              <tr class="mq-totals-row">
+                <td colspan="2"><strong>Total / Volume-Weighted Center Performance</strong></td>
+                <td id="mqFootGrossCalls"><strong>630</strong> gross/hr</td>
+                <td id="mqFootCalls"><strong>630</strong> net/hr</td>
+                <td id="mqFootAht"><strong>265.7s</strong></td>
+                <td id="mqFootErlangs"><strong>46.50 E</strong></td>
+                <td id="mqFootAgents"><strong>56.0</strong> eff. agents</td>
+                <td id="mqFootReq"><strong>59</strong> (Silo) / <strong>54</strong> (Pool)</td>
+                <td id="mqFootOcc"><strong>83.0%</strong></td>
+                <td id="mqFootAsa"><strong>13.4s</strong></td>
+                <td id="mqFootSl"><strong>84.8%</strong></td>
+                <td colspan="2" id="mqFootStatus"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="erlang.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
